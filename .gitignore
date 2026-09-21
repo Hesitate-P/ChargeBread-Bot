@@ -1,0 +1,11 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+probe/logs/
+data/
+*.sqlite3
+*.db
+.mimosa/
+.zcodeignore

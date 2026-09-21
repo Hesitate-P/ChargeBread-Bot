@@ -1,0 +1,13 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+data/
+probe/logs/
+tests/
+probe/
+.mimosa/
+.git/
+.gitignore
+*.md

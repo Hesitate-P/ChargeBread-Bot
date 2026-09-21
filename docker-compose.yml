@@ -1,0 +1,29 @@
+# 充能面包 bot —— 一条 docker compose up -d 就跑起来
+#
+# 用法：
+#   1. 把 .env.example 复制成 .env，填 QBOT_APP_ID / QBOT_APP_SECRET / BREAD_IMAGE_URL
+#   2. docker compose up -d
+#   3. docker compose logs -f        # 应看到「已连接网关」和「READY」
+#
+# 不需要端口映射、不需要域名、不需要备案 —— 事件走 WebSocket 出站长连接。
+
+services:
+  chargebread:
+    build: .
+    image: chargebread-bot:latest
+    container_name: chargebread-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # 钉死时区，否则签到日界会偏 8 小时（容器默认 UTC）
+      TZ: Asia/Shanghai
+      BREAD_DB_PATH: /app/data/chargebread.sqlite3
+    volumes:
+      # 数据库是唯一需要持久化的东西
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
