@@ -17,10 +17,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass
 
 from .api import Api, ApiError
 from .config import Config
+
+log = logging.getLogger("chargebread.panel")
 
 # 面板的身份标记（remark 不对用户展示，只给我们自己辨认）
 PANEL_REMARK = "chargebread:commands"
@@ -189,3 +193,27 @@ async def uninstall(api: Api) -> int:
         await api.delete_panel(str(panel_id))
         removed += 1
     return removed
+
+
+def start_autosync(api: Api, config: Config) -> "asyncio.Task[str] | None":
+    """启动时后台把面板同步成代码里的样子；返回任务，关掉则返回 None。
+
+    **不阻塞启动**：面板接口慢或报错都不该拖住机器人上线。所以做成后台任务，
+    失败只记日志。
+
+    之所以可以放心自动化：`install()` 是幂等的 —— 内容一致时只发一次 GET、
+    什么都不改，只有内容真的变了才删旧建新。而那正是你希望它自动发生的时候。
+    """
+    if not config.panel_autosync:
+        return None
+    return asyncio.create_task(_autosync(api, config))
+
+
+async def _autosync(api: Api, config: Config) -> str:
+    try:
+        summary = await install(api, config)
+    except Exception:  # noqa: BLE001 - 面板问题绝不能挡住机器人运行
+        log.warning("指令面板自动同步失败（不影响机器人运行）", exc_info=True)
+        return "指令面板自动同步失败"
+    log.info("指令面板：%s", summary)
+    return summary

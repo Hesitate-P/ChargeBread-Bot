@@ -61,6 +61,7 @@ docker compose logs -f
 | `/签到排行榜 [本群\|全部]` | 今日签到顺序榜，默认本群 |
 | `/我的面包` | 个人详情：累计、今日排名、连签、历史最高、补签卡 |
 | `/补签` | 用补签卡补回昨天，把连签接上 |
+| `/今日充能指数` | 今天的充能读数，0~100 + 一句评语。纯玩梗，不影响面包 |
 | `/改名 新名字` | 换个显示名（`/改名 默认` 改回跟 QQ 昵称同步） |
 | 空 `@` 或 `/帮助` | 菜单 |
 
@@ -119,11 +120,21 @@ docker compose logs -f
 
 ## 指令面板
 
-把 6 条指令装进 QQ 客户端的指令面板（点一下把命令填进输入框）。**它是显式的管理命令，不在启动时自动执行** —— 面板是对外可见的副作用，不该悄悄发生：
+把 7 条指令装进 QQ 客户端的指令面板（点一下把命令填进输入框）。
+
+**默认开机自动同步**：启动时后台比对一次，内容一致就只查一次、什么都不改；
+只有代码里的面板内容真的变了才删旧建新。失败只记日志，不会挡住机器人启动。
+不想自动的话设 `BREAD_PANEL_AUTOSYNC=0`。
+
+也可以手动跑（Docker 里同样适用）：
 
 ```bash
-python -m chargebread --install-panel     # 安装/更新，幂等；内容没变就什么都不做
+python -m chargebread --install-panel     # 安装/更新，幂等
 python -m chargebread --uninstall-panel   # 只删自己那个面板，不碰别人的
+
+# Docker 部署时，二选一（这条命令不会连网关，起临时容器是安全的）：
+docker compose exec chargebread python -m chargebread --install-panel
+docker compose run --rm chargebread python -m chargebread --install-panel
 ```
 
 - 生效范围跟配置走：配了 `BREAD_ALLOWED_GROUPS` 就只装到那些群（`specific`），否则全场景（`all`）。

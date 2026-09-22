@@ -50,6 +50,9 @@ class Config:
     allowed_groups: frozenset[str] = frozenset()
     # 新成员入群是否发欢迎语
     welcome_enabled: bool = True
+    # 启动时是否后台把指令面板同步成代码里的样子。
+    # 内容一致时只查一次、什么都不改；只有内容真变了才删旧建新。
+    panel_autosync: bool = True
     api_base: str = API_BASE
     log_level: str = "INFO"
 
@@ -103,6 +106,8 @@ class Config:
             reset_hour=reset_hour,
             allowed_groups=_split_openids(get("BREAD_ALLOWED_GROUPS")),
             welcome_enabled=get("BREAD_WELCOME_ENABLED", "1").strip().lower()
+            not in ("0", "false", "no", "off"),
+            panel_autosync=get("BREAD_PANEL_AUTOSYNC", "1").strip().lower()
             not in ("0", "false", "no", "off"),
             api_base=api_base,
             log_level=get("BREAD_LOG_LEVEL", "INFO").upper() or "INFO",

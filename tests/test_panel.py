@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import unittest
 from pathlib import Path
@@ -27,13 +28,28 @@ from chargebread.config import Config  # noqa: E402
 from chargebread import panel  # noqa: E402
 
 BASE = "https://api.bot.qq.com"
+
+
+def setUpModule() -> None:
+    """静音 panel 的 logger。
+
+    生产里自动同步失败就该 log.warning(exc_info=True) 报出来 —— 那可能意味着
+    面板没装上。但测试里会往 stderr 吐 traceback 弄脏输出。只关日志，不改行为。
+    """
+    import logging
+
+    logging.getLogger("chargebread.panel").setLevel(logging.CRITICAL)
+
+
 # 平台的字数口径：一个汉字算 2 个单位（文档「14 个字符，约 7 个中文汉字」）
 NAME_MAX_UNITS = 14
 DESC_MAX_UNITS = 30
 MAX_ITEMS = 20
 
 
-def make_config(allowed_groups: frozenset[str] = frozenset()) -> Config:
+def make_config(
+    allowed_groups: frozenset[str] = frozenset(), *, panel_autosync: bool = True
+) -> Config:
     return Config(
         app_id="1905655911",
         app_secret="s",
@@ -42,6 +58,7 @@ def make_config(allowed_groups: frozenset[str] = frozenset()) -> Config:
         tz=ZoneInfo("Asia/Shanghai"),
         api_base=BASE,
         allowed_groups=allowed_groups,
+        panel_autosync=panel_autosync,
     )
 
 
@@ -388,6 +405,77 @@ class UninstallTest(unittest.IsolatedAsyncioTestCase):
     async def test_nothing_to_do_is_not_an_error(self) -> None:
         self.transport.push(HttpResponse(200, {"records": [], "is_end": True}))
         self.assertEqual(await panel.uninstall(self.api), 0)
+
+
+class AutosyncTest(unittest.IsolatedAsyncioTestCase):
+    """启动时后台把面板同步成代码里的样子。
+
+    不做成阻塞启动的一步：面板接口慢或报错都不该拖住机器人上线。
+    内容一致时只查一次、什么都不改；只有内容真变了才删旧建新。
+    """
+
+    async def asyncSetUp(self) -> None:
+        self.transport = FakeTransport()
+        self.api = Api(make_config(), transport=self.transport)
+        self.transport.push(token_response())
+
+    async def test_disabled_by_config_returns_no_task(self) -> None:
+        task = panel.start_autosync(self.api, make_config(panel_autosync=False))
+        self.assertIsNone(task)
+        self.assertEqual(self.transport.calls, [], "关掉之后一个请求都不该发")
+
+    async def test_enabled_returns_a_running_task_and_creates_the_panel(self) -> None:
+        self.transport.push(HttpResponse(200, {"records": [], "is_end": True}))
+        self.transport.push(HttpResponse(200, {"panel_id": "p_auto"}))
+        task = panel.start_autosync(self.api, make_config())
+        self.assertIsNotNone(task)
+        assert task is not None
+        await asyncio.wait_for(task, timeout=2)
+        self.assertIn("p_auto", task.result())
+
+    async def test_does_not_block_the_caller(self) -> None:
+        """返回即已排入后台：调用方（启动流程）不该等它。"""
+        self.transport.push(HttpResponse(200, {"records": [], "is_end": True}))
+        self.transport.push(HttpResponse(200, {"panel_id": "p_auto"}))
+        task = panel.start_autosync(self.api, make_config())
+        assert task is not None
+        self.assertFalse(task.done(), "刚返回时不该已经跑完（应是后台任务）")
+        await asyncio.wait_for(task, timeout=2)
+
+    async def test_failure_is_swallowed_so_startup_is_not_blocked(self) -> None:
+        self.transport.push(ApiError(40030020, "内容存在安全风险"))
+        task = panel.start_autosync(self.api, make_config())
+        assert task is not None
+        # 不该抛出去
+        await asyncio.wait_for(task, timeout=2)
+
+    async def test_skips_writes_when_the_panel_already_matches(self) -> None:
+        """普通重启只该查一次 —— 这才是"自动同步"不会骚扰用户的原因。"""
+        payload = panel.to_payload(panel.build_spec(make_config()))
+        self.transport.push(
+            HttpResponse(
+                200,
+                {
+                    "records": [
+                        {
+                            "panel_id": "p_mine",
+                            "scope": "group",
+                            "target_type": "all",
+                            "panel": {
+                                "items": payload["panel"]["items"],
+                                "remark": payload["panel"]["remark"],
+                            },
+                        }
+                    ],
+                    "is_end": True,
+                },
+            )
+        )
+        task = panel.start_autosync(self.api, make_config())
+        assert task is not None
+        await asyncio.wait_for(task, timeout=2)
+        panel_methods = [c["method"] for c in self.transport.calls if "/v2/panels" in c["url"]]
+        self.assertEqual(panel_methods, ["GET"], "内容一致时只查不写")
 
 
 if __name__ == "__main__":

@@ -73,6 +73,7 @@ async def amain() -> int:
             loop.add_signal_handler(sig, gateway.stop)
 
     keeper = asyncio.create_task(api.run_token_keeper())
+    panel_task = panel.start_autosync(api, config)
     try:
         await gateway.run(bot.handle)
     except GatewayFatal as exc:
@@ -84,6 +85,10 @@ async def amain() -> int:
         keeper.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await keeper
+        if panel_task is not None and not panel_task.done():
+            panel_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await panel_task
         await api.close()
         db.close()
     log.info("已退出")
