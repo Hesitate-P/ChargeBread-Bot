@@ -95,6 +95,47 @@ class KeyboardTest(unittest.TestCase):
         self.assertEqual(types["补签"], 2)
         self.assertEqual(types["我的面包"], 2)
 
+    def test_profile_keyboard_leads_with_signin(self) -> None:
+        """实测反馈：我的面包页第一个按钮该是「签到」，不是「补签」。"""
+        first = kb_profile()["content"]["rows"][0]["buttons"][0]
+        self.assertEqual(first["render_data"]["label"], "签到")
+        self.assertEqual(first["action"]["type"], 2)
+
+    def test_profile_keyboard_keeps_makeup_and_both_boards(self) -> None:
+        labels = [
+            b["render_data"]["label"]
+            for row in kb_profile()["content"]["rows"]
+            for b in row["buttons"]
+        ]
+        self.assertEqual(labels[0], "签到")
+        self.assertIn("补签", labels)
+        self.assertIn("面包排行榜", labels)
+        self.assertIn("签到排行榜", labels)
+        self.assertEqual(len(labels), 4, "加了签到之后共四个按钮")
+
+    def test_every_command_button_inserts_a_parseable_command(self) -> None:
+        """type=2 按钮点击后是把 action.data 填进输入框，所以 **data 必须是
+        解析器认得的命令**。标签可以为了好看而不同于 data（如标签「签到」、
+        data「充能面包」），但 data 错了按钮就是死的。"""
+        from chargebread import commands
+
+        keyboards = {
+            "kb_signin": kb_signin(),
+            "kb_menu": kb_menu(),
+            "kb_profile": kb_profile(),
+            "kb_board": kb_board("group", "bread"),
+        }
+        for name, kb in keyboards.items():
+            for row in kb["content"]["rows"]:
+                for btn in row["buttons"]:
+                    if btn["action"]["type"] != 2:
+                        continue
+                    data = btn["action"]["data"]
+                    parsed = commands.parse(data)
+                    self.assertNotEqual(
+                        parsed.name, commands.UNKNOWN, f"{name} 里的按钮 data 解析不了: {data!r}"
+                    )
+
 
 class SigninTextTest(unittest.TestCase):
     def test_contains_rank_bread_and_image(self) -> None:

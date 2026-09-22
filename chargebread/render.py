@@ -398,13 +398,19 @@ def kb_menu() -> dict:
 
 
 def kb_profile() -> dict:
+    """个人页的按钮：第一排是**动作**（签到在前 —— 实测反馈第一个该是签到
+    而不是补签），第二排是**看榜**。两排各两个，手机上点着不挤。"""
     return _keyboard(
         [
             [
-                ("补签", CMD, "补签", STYLE_BLUE),
+                # 标签叫「签到」比「充能面包」好懂；data 才是真正填进输入框的命令
+                ("签到", CMD, "充能面包", STYLE_BLUE),
+                ("补签", CMD, "补签", STYLE_GRAY),
+            ],
+            [
                 ("面包排行榜", CMD, "面包排行榜", STYLE_GRAY),
                 ("签到排行榜", CMD, "签到排行榜", STYLE_GRAY),
-            ]
+            ],
         ]
     )
 
