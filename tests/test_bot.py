@@ -285,6 +285,17 @@ class MakeupTest(BotTestCase):
         self.assertIn("补签卡", self.last["content"])
         self.assertEqual(self.db.signin_count(UID2), 0, "没卡不该产生签到记录")
 
+    async def test_makeup_reply_carries_a_signin_button(self) -> None:
+        """补签成功的消息也要能一键签到 —— 补完顺手把今天的签了。"""
+        await self.bot.handle(group_event("/补签", user_id=UID2, nickname="阿强"))
+        labels = [
+            b["render_data"]["label"]
+            for row in self.last["keyboard"]["content"]["rows"]
+            for b in row["buttons"]
+        ]
+        self.assertIn("签到", labels)
+        self.assertNotIn("补签", labels, "刚补完，再放补签是个死按钮")
+
 
 class IgnoreTest(BotTestCase):
     async def test_ignores_its_own_messages(self) -> None:

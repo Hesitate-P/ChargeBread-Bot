@@ -30,6 +30,7 @@ from chargebread.render import (  # noqa: E402
     safe_name,
     signin_text,
     kb_board,
+    kb_makeup,
     kb_menu,
     kb_profile,
     kb_signin,
@@ -125,6 +126,25 @@ class KeyboardTest(unittest.TestCase):
                 self.assertGreaterEqual(
                     len(row["buttons"]), 2, f"{name} 第 {index} 排只有 1 个按钮"
                 )
+
+    def test_makeup_keyboard_offers_signin(self) -> None:
+        """补签成功也要给「签到」按钮 —— 补完签顺手把今天的也签了。"""
+        first = kb_makeup()["content"]["rows"][0]["buttons"][0]
+        self.assertEqual(first["render_data"]["label"], "签到")
+        self.assertEqual(first["action"]["data"], "充能面包")
+        self.assertEqual(first["action"]["type"], 2)
+
+    def test_makeup_keyboard_has_no_dead_makeup_button(self) -> None:
+        """刚补完签，再放一个「补签」按钮是死的：只能补昨天，而且刚补过，
+        点下去只会得到"不需要补签"。所以这个键盘里不放它。"""
+        labels = [
+            b["render_data"]["label"]
+            for row in kb_makeup()["content"]["rows"]
+            for b in row["buttons"]
+        ]
+        self.assertNotIn("补签", labels)
+        self.assertIn("签到", labels)
+        self.assertIn("我的面包", labels)
 
     def test_profile_keyboard_leads_with_signin(self) -> None:
         """实测反馈：我的面包页第一个按钮该是「签到」，不是「补签」。"""

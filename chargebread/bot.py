@@ -228,7 +228,7 @@ class Bot:
             keyboard = render.kb_profile()
         elif cmd.name == commands.MAKEUP:
             text = self._do_makeup(group_openid, user_id, nickname)
-            keyboard = render.kb_profile()
+            keyboard = render.kb_makeup()
         elif cmd.name == commands.RENAME:
             text = self._do_rename(user_id, cmd.arg)
             keyboard = render.kb_menu()
