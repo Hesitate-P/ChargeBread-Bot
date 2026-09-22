@@ -95,10 +95,28 @@ docker compose logs -f
 | 消息内容 | `content` **前后带空格**（@ 前缀被平台剥掉但空格留着），必须 `strip()` |
 | 主动推送 | 群里默认**关闭**（`allow_proactive_msg: false`），管理员可开。本 bot 纯被动回复，不受影响 |
 | IP 白名单 | **不是上线前提**。「未设置时所有请求来源 IP 都会被允许调用」（文档原文）。设了则只放行单个 IPv4，不支持 CIDR，最多 50 条 |
+| 指令面板字数 | `name` 上限写着「14 个字符，约 7 个中文汉字」——**一个汉字算 2 个单位**，所以实际上限是 **7 个汉字**。超了报 `30013 超出数量限制`（错误信息完全指错方向） |
+| 指令面板列表 | `GET /v2/panels` 的 `scope` 是**必填查询参数**（端点清单里没写），响应字段是 **`records`** 不是 `panels` |
 
 > 上表每一条都是真机验证或文档原文逐字核对过的。**不要**把未经核对的转述写进这里——
 > 本项目就发生过一次：一条"新增机器人必须填写 IP 白名单才能提审上线"的说法被写进
 > 文档，实际平台上根本不存在这句话，而它会把动态 IP 家用部署的结论引向完全相反的方向。
+
+## 指令面板
+
+把 6 条指令装进 QQ 客户端的指令面板（点一下把命令填进输入框）。**它是显式的管理命令，不在启动时自动执行** —— 面板是对外可见的副作用，不该悄悄发生：
+
+```bash
+python -m chargebread --install-panel     # 安装/更新，幂等；内容没变就什么都不做
+python -m chargebread --uninstall-panel   # 只删自己那个面板，不碰别人的
+```
+
+- 生效范围跟配置走：配了 `BREAD_ALLOWED_GROUPS` 就只装到那些群（`specific`），否则全场景（`all`）。
+- 面板块靠 `remark`（`chargebread:commands`，不对用户展示）认自己，所以重装/卸载不会误伤别的面板。
+- 指令项只能填**裸命令词**：`name` 上限 7 个汉字，`面包排行榜 全部` 正好 8 个会被平台拒，所以面板里不放带参数的项。
+- 面板**不需要**上架审核；控制台里那份「指令配置」是另一套（那是客户端输入框的自动补全，要走审核，和这个 API 无关）。
+
+诊断脚本：`python3 probe/panel_probe.py --boundary` 可以二分复现字数上限。
 
 ## 运维须知
 
@@ -114,7 +132,7 @@ docker compose logs -f
 ## 开发
 
 ```bash
-python3 -m unittest discover -s tests -v     # 205 个测试
+python3 -m unittest discover -s tests -v     # 238 个测试
 python3 probe/probe.py --intents-only        # 探测平台能力（需 .env 里有凭据）
 python3 probe/check_url.py <图片URL>          # 上线前验证图片可达性
 ```
@@ -130,6 +148,7 @@ render.py     markdown 排版与按钮
 commands.py   命令与参数解析（按钮回调和文本走同一个解析器）
 api.py        HTTP 客户端：token 后台续期、只重试网络错、3 秒应答单次机会
 gateway.py    WS 长连接：握手、心跳、退避重连、事件分发
+panel.py      指令面板的安装/卸载（显式管理命令，不在启动时跑）
 bot.py        接线：把事件翻译成动作
 netguard.py   出站 URL 守卫（SSRF 防护）
 ```

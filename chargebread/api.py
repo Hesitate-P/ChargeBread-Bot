@@ -26,7 +26,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from .config import Config
 from .netguard import assert_public_ws_url
@@ -55,6 +55,11 @@ RETRY_BACKOFF = 0.3
 SEND_TIMEOUT = 10.0
 
 log = logging.getLogger("chargebread.api")
+
+# 指令面板的场景取值（GET /v2/panels 的 scope 是必填参数）
+PANEL_SCOPES = frozenset({"c2c", "group", "channel", "dm"})
+# 列表分页兜底：单页最多 50，机器人最多 20 个面板，5 页远远够
+MAX_PANEL_PAGES = 5
 
 # 路径片段白名单。group_openid / interaction_id 都来自**事件**，是不可信输入：
 # 它们只拼在同一主机上，构不成 SSRF，但未校验的片段能拼出 `../` 去命中非预期端点。
@@ -360,6 +365,46 @@ class Api:
             timeout=SEND_TIMEOUT,
             dedup_code_as_success=True,
         )
+
+    # ---- 指令面板 ---------------------------------------------------------
+    async def list_panels(self, scope: str = "group") -> list[dict[str, Any]]:
+        """列出指定场景下的指令面板。
+
+        两个都来自实测/文档细节，写错会静默出大问题：
+          · `scope` 是**必填**查询参数（端点清单里没写，漏了报 30011）
+          · 响应字段是 `records`，**不是** `panels` —— 读错就永远认为"没有面板"，
+            于是每次安装都新建一个，一路攒到 20 个上限
+        分页靠 cursor，最多翻 MAX_PANEL_PAGES 页兜底。
+        """
+        if scope not in PANEL_SCOPES:
+            raise ValueError(f"scope 只能是 {sorted(PANEL_SCOPES)}，收到 {scope!r}")
+        records: list[dict[str, Any]] = []
+        cursor = ""
+        for _ in range(MAX_PANEL_PAGES):
+            params = {"scope": scope}
+            if cursor:
+                params["cursor"] = cursor
+            body = await self.get(f"/v2/panels?{urlencode(params)}")
+            page = body.get("records")
+            if isinstance(page, list):
+                records.extend(page)
+            if body.get("is_end"):
+                break
+            cursor = str(body.get("next_cursor") or "")
+            if not cursor:
+                break
+        return records
+
+    async def create_panel(self, payload: dict[str, Any]) -> str:
+        """创建指令面板，返回 panel_id。限频 10 QPM，一个机器人最多 20 个。"""
+        body = await self.request("POST", "/v2/panels", payload)
+        panel_id = body.get("panel_id")
+        if not panel_id:
+            raise ApiError(None, f"创建面板的响应里没有 panel_id: {body!r}")
+        return str(panel_id)
+
+    async def delete_panel(self, panel_id: str) -> None:
+        await self.request("DELETE", f"/v2/panels/{_segment(panel_id, 'panel_id')}")
 
     # ---- 按钮应答 ---------------------------------------------------------
     async def ack_interaction(self, interaction_id: str) -> None:

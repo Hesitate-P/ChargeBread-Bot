@@ -2,6 +2,12 @@
 
 把配置、存储、HTTP 客户端、机器人逻辑、长连接串起来，并处理优雅退出。
 
+也兼一次性管理命令（装/卸指令面板）—— 面板是**对外可见**的副作用，
+不该在每次启动时悄悄发生，所以做成显式调用：
+
+    python -m chargebread --install-panel
+    python -m chargebread --uninstall-panel
+
 关于信号：容器收到 docker stop 会发 SIGTERM。这里把它转成 gateway.stop()，
 让长连接在 1 秒轮询粒度内结束（网关的接收循环会定期检查停止标志），
 而不是干等接收阻塞到被 SIGKILL。
@@ -9,6 +15,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import contextlib
 import logging
@@ -16,7 +23,7 @@ import signal
 import sys
 from datetime import datetime
 
-from . import __version__
+from . import __version__, panel
 from .api import Api
 from .bot import Bot
 from .config import Config, ConfigError
@@ -83,8 +90,53 @@ async def amain() -> int:
     return 0
 
 
-def main() -> int:
+async def panel_command(args: argparse.Namespace) -> int:
+    """一次性装/卸指令面板，然后退出（不启动机器人）。"""
     try:
+        config = Config.from_env()
+    except ConfigError as exc:
+        print(f"配置错误：{exc}", file=sys.stderr)
+        return 2
+    setup_logging(config.log_level)
+
+    api = Api(config)
+    try:
+        if args.install_panel:
+            print(await panel.install(api, config))
+        else:
+            removed = await panel.uninstall(api)
+            print(f"已删除 {removed} 个充能面包指令面板" if removed else "没有找到需要删除的面板")
+    except Exception as exc:  # noqa: BLE001 - 管理命令要把失败原因说清楚
+        print(f"操作失败：{type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await api.close()
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="python -m chargebread",
+        description="充能面包 —— QQ 群聊每日签到机器人",
+    )
+    p.add_argument(
+        "--install-panel",
+        action="store_true",
+        help="安装/更新指令面板后退出（不启动机器人）",
+    )
+    p.add_argument(
+        "--uninstall-panel",
+        action="store_true",
+        help="删除本机器人的指令面板后退出",
+    )
+    return p
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    try:
+        if args.install_panel or args.uninstall_panel:
+            return asyncio.run(panel_command(args))
         return asyncio.run(amain())
     except KeyboardInterrupt:
         return 130
