@@ -95,6 +95,37 @@ class KeyboardTest(unittest.TestCase):
         self.assertEqual(types["补签"], 2)
         self.assertEqual(types["我的面包"], 2)
 
+    def test_signin_keyboard_offers_signin_for_bystanders(self) -> None:
+        """签到成功的消息群里其他人也看得到。
+
+        给他们一个「签到」按钮，点一下就把命令填进输入框，不用记命令名 ——
+        所以它该排在最前面（最显眼、最好按）。
+        """
+        first = kb_signin()["content"]["rows"][0]["buttons"][0]
+        self.assertEqual(first["render_data"]["label"], "签到")
+        self.assertEqual(first["action"]["data"], "充能面包", "填进输入框的是 data")
+        self.assertEqual(first["action"]["type"], 2)
+
+    def test_no_keyboard_leaves_a_lone_button_on_its_own_row(self) -> None:
+        """多排键盘里，每一排至少两个按钮。
+
+        单开一排只放一个按钮看着很空（补签曾经自己占一排，实测反馈过），
+        而且白白多占一行屏幕。
+        """
+        keyboards = {
+            "kb_signin": kb_signin(),
+            "kb_menu": kb_menu(),
+            "kb_profile": kb_profile(),
+        }
+        for name, kb in keyboards.items():
+            rows = kb["content"]["rows"]
+            if len(rows) < 2:
+                continue
+            for index, row in enumerate(rows, 1):
+                self.assertGreaterEqual(
+                    len(row["buttons"]), 2, f"{name} 第 {index} 排只有 1 个按钮"
+                )
+
     def test_profile_keyboard_leads_with_signin(self) -> None:
         """实测反馈：我的面包页第一个按钮该是「签到」，不是「补签」。"""
         first = kb_profile()["content"]["rows"][0]["buttons"][0]
