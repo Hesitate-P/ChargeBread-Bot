@@ -97,6 +97,7 @@ docker compose logs -f
 | IP 白名单 | **不是上线前提**。「未设置时所有请求来源 IP 都会被允许调用」（文档原文）。设了则只放行单个 IPv4，不支持 CIDR，最多 50 条 |
 | 指令面板字数 | `name` 上限写着「14 个字符，约 7 个中文汉字」——**一个汉字算 2 个单位**，所以实际上限是 **7 个汉字**。超了报 `30013 超出数量限制`（错误信息完全指错方向） |
 | 指令面板列表 | `GET /v2/panels` 的 `scope` 是**必填查询参数**（端点清单里没写），响应字段是 **`records`** 不是 `panels` |
+| markdown 有序列表 | `数字.` + 空格是 CommonMark 列表标记，渲染器会**自动重新编号**，且列表被空行打断时从头开始。所以榜单序号**不能用 `数字.`**，我们改用中文顿号 `1、`（对 markdown 无含义） |
 
 > 上表每一条都是真机验证或文档原文逐字核对过的。**不要**把未经核对的转述写进这里——
 > 本项目就发生过一次：一条"新增机器人必须填写 IP 白名单才能提审上线"的说法被写进
@@ -132,7 +133,7 @@ python -m chargebread --uninstall-panel   # 只删自己那个面板，不碰别
 ## 开发
 
 ```bash
-python3 -m unittest discover -s tests -v     # 238 个测试
+python3 -m unittest discover -s tests -v     # 247 个测试
 python3 probe/probe.py --intents-only        # 探测平台能力（需 .env 里有凭据）
 python3 probe/check_url.py <图片URL>          # 上线前验证图片可达性
 ```

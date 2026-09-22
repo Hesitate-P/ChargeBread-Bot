@@ -25,6 +25,7 @@ from chargebread.render import (  # noqa: E402
     board_text,
     makeup_text,
     menu_text,
+    need_signin_text,
     profile_text,
     safe_name,
     signin_text,
@@ -200,7 +201,7 @@ class BoardTest(unittest.TestCase):
         """实测建议：序号与奖牌并存。
 
         原来前三名只有奖牌、第 4 名突然变成 "4."，视觉上断裂；
-        "1.🥇" 既能一眼数出名次，又保留奖牌。
+        "1、🥇" 既能一眼数出名次，又保留奖牌。
         """
         text = board_text(
             title="面包排行榜",
@@ -212,10 +213,50 @@ class BoardTest(unittest.TestCase):
             ),
             scope="group", scope_label="本群", value_suffix=" 个🍞", me=None,
         )
-        self.assertIn("1.🥇 **Hoshino iChiKa** — 15 个🍞", text)
-        self.assertIn("2.🥈 **Tascota** — 14 个🍞", text)
-        self.assertIn("3.🥉 **smile** — 13 个🍞", text)
-        self.assertIn("4. **Hesitate_P** — 11 个🍞", text)
+        self.assertIn("1、🥇 **Hoshino iChiKa** — 15 个🍞", text)
+        self.assertIn("2、🥈 **Tascota** — 14 个🍞", text)
+        self.assertIn("3、🥉 **smile** — 13 个🍞", text)
+        self.assertIn("4、 **Hesitate_P** — 11 个🍞", text)
+
+    def test_no_line_looks_like_a_markdown_list_item(self) -> None:
+        """榜单的每一行都不能长得像 markdown 有序列表项。
+
+        `数字.` + 空格是 CommonMark 的列表标记，渲染器会**自动重新编号**，
+        并在列表被打断时从头开始。曾经 `1.🥇 `（无空格）与 `4. `（有空格）混用，
+        于是同一个榜单一半是段落、一半是列表，不同客户端显示完全不同：
+        安卓端后半段从 1 重编，另一个客户端合成 1–7（实测反馈）。
+        """
+        import re
+
+        text = board_text(
+            title="面包排行榜",
+            entries=entries(
+                ("a", "甲", 30), ("b", "乙", 20), ("c", "丙", 10),
+                ("d", "丁", 8), ("e", "戊", 5), ("f", "己", 3),
+            ),
+            scope="group", scope_label="本群", value_suffix=" 个🍞",
+            me=MeStanding("z", "自己", 1, 9),
+        )
+        for line in text.split("\n"):
+            self.assertIsNone(
+                re.match(r"^\s*\d+[.)]\s", line),
+                f"这行会被渲染器当列表项重新编号: {line!r}",
+            )
+
+    def test_signin_board_lines_are_not_list_items_either(self) -> None:
+        import re
+
+        text = board_text(
+            title="签到排行榜",
+            entries=[
+                BoardEntry("a", "甲", 1, signed_at="2026-09-21T08:03:12+08:00"),
+                BoardEntry("b", "乙", 2, signed_at="2026-09-21T08:05:47+08:00"),
+            ],
+            scope="group", scope_label="今天 · 本群", value_suffix="", me=None, tz=TZ,
+        )
+        for line in text.split("\n"):
+            self.assertIsNone(re.match(r"^\s*\d+[.)]\s", line), repr(line))
+
 
     def test_shows_scope_label(self) -> None:
         group = board_text(title="面包排行榜", entries=entries(("a", "甲", 1)), scope="group", scope_label="本群", value_suffix=" 个面包", me=None)
@@ -319,6 +360,110 @@ class ProfileTest(unittest.TestCase):
             self.assertIn(expect, text)
 
 
+class MarkdownStructureAuditTest(unittest.TestCase):
+    """所有对外消息都要能被不同客户端**一致**渲染。
+
+    实测教训（两张客户端截图对比）：`数字.` + 空格是 CommonMark 的有序列表
+    标记，渲染器会给它**自动重新编号**，而且在列表被空行打断时从头开始。
+    我们曾把 `1.🥇 `（无空格，不算列表项）与 `4. `（有空格，算列表项）混用，
+    于是同一个榜单一半是段落、一半是列表 —— 安卓端后半段从 1 重编，
+    另一个客户端合成 1–7。
+
+    这条审计把"意外结构"这一类问题一次性覆盖到所有消息上，而不只是榜单。
+    """
+
+    def _messages(self) -> dict[str, str]:
+        return {
+            "signin": signin_text(
+                nickname="小明", rank=3, bread=16, streak=5,
+                total_bread=142, total_today=17, image_url=IMAGE,
+            ),
+            "already": already_text(
+                nickname="小明", rank=8, bread=11, streak=3, total_bread=53
+            ),
+            "makeup": makeup_text(
+                target_date="2026-09-20", bread=9, streak=8,
+                total_bread=59, cards_balance=0,
+            ),
+            "bread_board": board_text(
+                title="面包排行榜",
+                entries=entries(("a", "甲", 30), ("b", "乙", 20), ("c", "丙", 10), ("d", "丁", 5)),
+                scope="group", scope_label="本群", value_suffix=" 个🍞",
+                me=MeStanding("z", "自己", 1, 99),
+            ),
+            "signin_board": board_text(
+                title="签到排行榜",
+                entries=[
+                    BoardEntry("a", "甲", 1, signed_at="2026-09-21T08:03:12+08:00"),
+                    BoardEntry("b", "乙", 2, signed_at="2026-09-21T08:05:47+08:00"),
+                ],
+                scope="all", scope_label="今天 · 全部", value_suffix="",
+                me=None, tz=TZ,
+            ),
+            "signin_board_empty": board_text(
+                title="签到排行榜", entries=[], scope="group",
+                scope_label="今天 · 本群", value_suffix="", me=None,
+            ),
+            "profile": profile_text(
+                nickname="小明", rank=3, total_bread=142, total_today=17, streak=5,
+                best_streak=11, signin_count=48, cards=1, days_to_card=2,
+            ),
+            "profile_unsigned": profile_text(
+                nickname="小明", rank=0, total_bread=0, total_today=0, streak=0,
+                best_streak=0, signin_count=0, cards=0, days_to_card=7,
+            ),
+            "menu": menu_text(),
+            "need_signin": need_signin_text(),
+        }
+
+    def test_no_ordered_list_markers_anywhere(self) -> None:
+        """`数字.` 或 `数字)` 加空格会触发渲染器自动重新编号 —— 一条都不许有。"""
+        import re
+
+        for name, text in self._messages().items():
+            for line in text.split("\n"):
+                self.assertIsNone(
+                    re.match(r"^\s*\d+[.)]\s", line),
+                    f"{name} 里这行会被当列表项重编号: {line!r}",
+                )
+
+    def test_no_thematic_breaks_or_code_fences(self) -> None:
+        """`***` / `---` / `___` 是分割线，围栏是代码块 —— 群聊 markdown 里
+        我们没验过它们怎么渲染，而平台的支持列表里也没有代码块。"""
+        for name, text in self._messages().items():
+            for line in text.split("\n"):
+                stripped = line.strip()
+                self.assertNotIn("```", stripped, f"{name}: {line!r}")
+                self.assertNotIn("~~~", stripped, f"{name}: {line!r}")
+                self.assertFalse(
+                    stripped and len(set(stripped)) == 1 and stripped[0] in "*-_",
+                    f"{name} 里这行是分割线: {line!r}",
+                )
+
+    def test_no_blockquotes(self) -> None:
+        for name, text in self._messages().items():
+            for line in text.split("\n"):
+                self.assertFalse(line.lstrip().startswith(">"), f"{name}: {line!r}")
+
+    def test_bullets_only_where_intended(self) -> None:
+        """`- ` 我们是有意用的（签到明细、个人页、菜单），但要确认它没跑到
+        榜单里去 —— 榜单靠序号，不该混进项目符号。"""
+        messages = self._messages()
+        for name in ("bread_board", "signin_board"):
+            for line in messages[name].split("\n"):
+                self.assertFalse(
+                    line.lstrip().startswith("- "), f"{name} 里不该有项目符号: {line!r}"
+                )
+
+    def test_headings_appear_only_as_the_first_lines(self) -> None:
+        """标题只该出现在消息开头的 # / ##，正文里不该冒出 # 。"""
+        for name, text in self._messages().items():
+            lines = text.split("\n")
+            for index, line in enumerate(lines):
+                if line.startswith("#"):
+                    self.assertLess(index, 2, f"{name} 第 {index} 行才是标题: {line!r}")
+
+
 class MenuTest(unittest.TestCase):
     def test_lists_every_command(self) -> None:
         text = menu_text()
@@ -338,9 +483,21 @@ class SafeNameTest(unittest.TestCase):
     def test_underscore_in_name_survives(self) -> None:
         """下划线是用户名常见字符，删了会把真实昵称改坏。
 
-        保留它最坏只是名字显示成斜体 —— 纯外观，注入不了东西。
+        保留它最坏只是名字显示成斜体 —— 纯外观，注入不了东西，也拆不坏
+        我们用 ** 做的加粗包裹（单个符号配不成对）。
         """
         self.assertEqual(safe_name("Hesitate_P"), "Hesitate_P")
+
+    def test_tilde_in_name_survives(self) -> None:
+        """波浪号同理：`小明~` 是很常见的昵称写法。
+
+        单个 ~ 配不成删除线，而且不影响我们的 ** 包裹。
+        """
+        self.assertEqual(safe_name("小明~"), "小明~")
+
+    def test_asterisk_is_still_stripped(self) -> None:
+        """星号必须删：昵称里的 * 会和包裹用的 ** 配对错乱，把加粗拆坏。"""
+        self.assertNotIn("*", safe_name("a**b"))
 
     def test_markdown_emphasis_cannot_leak_into_our_layout(self) -> None:
         """昵称里的 ** 会把我们自己的强调标记搞乱。"""
