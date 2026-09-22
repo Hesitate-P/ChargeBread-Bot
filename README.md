@@ -1,9 +1,16 @@
+<p align="center">
+  <img src="充能面包.png" alt="充能面包" width="220">
+</p>
+
+<p align="center">何为充能面包？</p>
+
 # 🍞 充能面包 bot
 
 QQ 群聊娱乐机器人。用户发 `/充能面包` 签到领面包，看排行榜，攒连签。
 
 ```
 # 🍞 充能完成
+
 
 **Hesitate_P** 今天第 🥉 **3** 个签到
 

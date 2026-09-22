@@ -25,7 +25,8 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY chargebread/ ./chargebread/
-COPY 充能面包.png ./
+# 注意：不要把 充能面包.png 复制进镜像 —— 机器人发图用的是 BREAD_IMAGE_URL
+# 指向的公网图床，代码里不读本地文件，复制进来只是白占体积。
 
 # 数据库落在挂载卷上；用非 root 跑
 RUN useradd --create-home --uid 10001 bread \
