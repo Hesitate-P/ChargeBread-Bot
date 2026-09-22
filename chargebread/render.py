@@ -332,19 +332,20 @@ def welcome_text(*, mention: str = "", image_url: str) -> str:
     """新成员入群的欢迎语。
 
     关于 @：`GROUP_MEMBER_ADD` 事件**不携带昵称**（只有 openid），成员信息接口
-    又是白名单制，所以写不出"@昵称" —— 但平台支持用 openid 直接提及，
-    客户端会渲染成 `@用户` 标签，所以名字由客户端自己显示，不需要我们拿到。
+    又是白名单制，所以写不出"@昵称" —— 但平台支持用 openid 提及
+    （`<qqbot-at-user id="" />`），客户端会渲染成 `@用户` 标签，所以名字由
+    客户端自己显示，不需要我们拿到。**已实测跑通**。
+
+    文案只有三行加一张图：新成员不会读长文，说清"发什么"就够了。
     """
-    lead = f"{mention} 恭喜，充能面包 {BREAD}" if mention else f"恭喜，充能面包 {BREAD}"
+    lead = f"{mention} 恭喜，充能面包。" if mention else "恭喜，充能面包。"
     return "\n".join(
         [
             f"# {BREAD} 欢迎新成员",
             "",
             lead,
             "",
-            "- 发 充能面包 签到，每天领面包",
-            "- 抢当天第一个签到有额外加成",
-            "- 点下面的按钮也能签到",
+            f"- 发 充能面包 签到，每天领面包{BREAD}",
             "",
             f"![{IMAGE_ALT} {IMAGE_SIZE}]({image_url})",
         ]

@@ -54,7 +54,11 @@ docker compose logs -f
 | `/签到排行榜 [本群\|全部]` | 今日签到顺序榜，默认本群 |
 | `/我的面包` | 个人详情：累计、今日排名、连签、历史最高、补签卡 |
 | `/补签` | 用补签卡补回昨天，把连签接上 |
+| `/改名 新名字` | 换个显示名（`/改名 默认` 改回跟 QQ 昵称同步） |
 | 空 `@` 或 `/帮助` | 菜单 |
+
+新成员入群时机器人会主动发一条欢迎语（@ 新成员 + 面包图 + 签到按钮），
+可用 `BREAD_WELCOME_ENABLED=0` 关闭。
 
 参数是**宽进**的：`全部`/`全服`/`所有`/`all` 都认，`本群`/`群内`/`group` 都认，
 打错字**静默回落本群**——不因为一个错别字把人挡在门外。
@@ -98,8 +102,8 @@ docker compose logs -f
 | 指令面板字数 | `name` 上限写着「14 个字符，约 7 个中文汉字」——**一个汉字算 2 个单位**，所以实际上限是 **7 个汉字**。超了报 `30013 超出数量限制`（错误信息完全指错方向） |
 | 指令面板列表 | `GET /v2/panels` 的 `scope` 是**必填查询参数**（端点清单里没写），响应字段是 **`records`** 不是 `panels` |
 | markdown 有序列表 | `数字.` + 空格是 CommonMark 列表标记，渲染器会**自动重新编号**，且列表被空行打断时从头开始。所以榜单序号**不能用 `数字.`**，我们改用中文顿号 `1、`（对 markdown 无含义） |
-| @某人 | 官方「文本交互」页：`<qqbot-at-user id="" />`，**群聊可用**且支持 markdown 消息（旧写法 `<@userid>` 即将弃用）。这个语法不在消息/markdown 那几页里，只在 `server-inter/message/trans/text-chain.html` |
-| 被动回复入群事件 | 文档说 `event_id` 只支持 `INTERACTION_CREATE` / `GROUP_ADD_ROBOT` / `GROUP_MSG_RECEIVE`，但**实测有其他官方机器人（未启用主动消息）成功用它回复 `GROUP_MEMBER_ADD`**。我们仍保留了退回主动消息的兜底 |
+| 被动回复入群事件 | 文档说 `event_id` 只支持 `INTERACTION_CREATE` / `GROUP_ADD_ROBOT` / `GROUP_MSG_RECEIVE`，**不含 `GROUP_MEMBER_ADD`** —— 但实测**用外层信封 id 就能被动回复它**（我们自己的机器人已跑通，且不需要主动消息额度，日志干净）。保留退回主动消息的兜底以防平台改动 |
+| @某人 | 官方「文本交互」页：`<qqbot-at-user id="" />`，**群聊可用**且支持 markdown 消息（旧写法 `<@userid>` 即将弃用）。这个语法不在消息/markdown 那几页里，只在 `server-inter/message/trans/text-chain.html`。**动态拼进 content 也已实测生效**（社区说变量传参会 400，指的是控制台模板参数，不是原始 content） |
 | 入群事件不带昵称 | `GROUP_MEMBER_ADD` 的 `d` 只有 `group_openid` / `member_openid` / `user_openid` / `timestamp` —— 没有昵称、也没有 `id`。所以写不出"@昵称"，改用 openid 提及让客户端渲染名字 |
 
 > 上表每一条都是真机验证或文档原文逐字核对过的。**不要**把未经核对的转述写进这里——

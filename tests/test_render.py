@@ -580,6 +580,24 @@ class WelcomeTest(unittest.TestCase):
         text = welcome_text(image_url=IMAGE)
         self.assertIn("充能面包", text)
 
+    def test_wording_matches_what_was_agreed(self) -> None:
+        """实测确认 @ 生效后定稿的文案。
+
+        只有一条说明 —— 新成员不会读长文，说清"发什么"就够了。
+        """
+        text = welcome_text(mention=mention_tag("FE003FAF"), image_url=IMAGE)
+        self.assertIn("# 🍞 欢迎新成员", text)
+        self.assertIn('<qqbot-at-user id="FE003FAF" /> 恭喜，充能面包。', text)
+        self.assertIn("发 充能面包 签到，每天领面包", text)
+        bullets = [ln for ln in text.split("\n") if ln.startswith("- ")]
+        self.assertEqual(len(bullets), 1, "定稿只留一条说明")
+
+    def test_without_mention_the_sentence_still_reads(self) -> None:
+        """退回路径里没有 @，句子要能独立成立。"""
+        text = welcome_text(image_url=IMAGE)
+        self.assertIn("恭喜，充能面包。", text)
+        self.assertFalse(text.split("\n")[2].startswith(" "), "不该留下前导空格")
+
     def test_mention_uses_the_documented_group_syntax(self) -> None:
         """官方"文本交互"页：`<qqbot-at-user id="" />`，群聊可用且支持 markdown。
 
