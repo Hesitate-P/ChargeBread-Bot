@@ -22,6 +22,7 @@ BOARD_BREAD = "board_bread"
 BOARD_SIGNIN = "board_signin"
 PROFILE = "profile"
 MAKEUP = "makeup"
+CHARGE = "charge"
 RENAME = "rename"
 HELP = "help"
 UNKNOWN = "unknown"
@@ -41,6 +42,9 @@ COMMAND_ALIASES: dict[str, str] = {
     "签到榜": BOARD_SIGNIN,
     "我的面包": PROFILE,
     "补签": MAKEUP,
+    # 只做这一个命令名，不要别名：「今日充能」「充能指数」「指数」都不认。
+    # 少一个入口就少一个歧义源（尤其"充能"同时是"充能面包"的前缀）。
+    "今日充能指数": CHARGE,
     "改名": RENAME,
     "改昵称": RENAME,
     "setnick": RENAME,

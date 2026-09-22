@@ -88,6 +88,7 @@ def panel_items() -> list[dict]:
         {"name": "我的面包", "desc": "个人详情与连签", "type": "command"},
         {"name": "面包排行榜", "desc": "本群面包总数榜", "type": "command"},
         {"name": "签到排行榜", "desc": "本群今日签到顺序", "type": "command"},
+        {"name": "今日充能指数", "desc": "看看今天充了几格电", "type": "command"},
         {"name": "补签", "desc": "用补签卡补回昨天", "type": "command"},
         {"name": "帮助", "desc": "显示菜单与全部玩法", "type": "command"},
     ]

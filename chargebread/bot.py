@@ -323,6 +323,9 @@ class Bot:
         elif cmd.name == commands.MAKEUP:
             text = self._do_makeup(group_openid, user_id, nickname)
             keyboard = render.kb_makeup()
+        elif cmd.name == commands.CHARGE:
+            text = self._do_charge(user_id, nickname)
+            keyboard = render.kb_charge()
         elif cmd.name == commands.RENAME:
             text = self._do_rename(user_id, cmd.arg)
             keyboard = render.kb_menu()
@@ -452,6 +455,17 @@ class Bot:
         )
         return text, render.kb_board(scope, "signin")
 
+    def _do_charge(self, user_id: str, nickname: str) -> str:
+        """今日充能指数。纯推导，不写库、不发面包、不影响奖励。"""
+        today = self._today()
+        reading = game.charge_index(user_id, today)
+        signed = self.db.get_signin(today.isoformat(), user_id) is not None
+        return render.charge_text(
+            nickname=self._display_name(user_id, nickname),
+            reading=reading,
+            signed_today=signed,
+        )
+
     def _do_profile(self, user_id: str, nickname: str) -> str:
         today_iso = self._today().isoformat()
         row = self.db.get_signin(today_iso, user_id)
@@ -467,6 +481,7 @@ class Bot:
             signin_count=self.db.signin_count(user_id),
             cards=cards,
             days_to_card=days_to_next_card(streak),
+            charge=game.charge_index(user_id, self._today()),
         )
 
     def _do_makeup(self, group_openid: str, user_id: str, nickname: str) -> str:

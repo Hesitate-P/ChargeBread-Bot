@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from .db import BoardEntry
@@ -268,6 +269,7 @@ def profile_text(
     signin_count: int,
     cards: int,
     days_to_card: int,
+    charge: Any | None = None,
 ) -> str:
     rank_line = f"今日排名：第 **{rank}** 名（今天已有 {total_today} 人签到）" if rank else "今日还没签到"
     card_line = (
@@ -275,20 +277,25 @@ def profile_text(
         if cards
         else f"补签卡：**0** 张（再连签 {days_to_card} 天得下一张）"
     )
-    return "\n".join(
-        [
-            f"# {BREAD} 我的面包",
-            "",
-            f"**{safe_name(nickname)}**",
-            "",
-            f"- 累计面包：**{total_bread}** 个",
-            f"- {rank_line}",
-            f"- {_streak_line(streak)}",
-            f"- 历史最高连签：**{best_streak}** 天",
-            f"- 累计签到：**{signin_count}** 天",
-            f"- {card_line}",
-        ]
-    )
+    lines = [
+        f"# {BREAD} 我的面包",
+        "",
+        f"**{safe_name(nickname)}**",
+        "",
+        f"- 累计面包：**{total_bread}** 个",
+        f"- {rank_line}",
+    ]
+    if charge is not None:
+        # 只放数值和档名：这一页已经有 6 行，再塞一句诗会太长，
+        # 评语留给 /今日充能指数 那条，让那个命令有自己的"开盲盒"感。
+        lines.append(f"- 今日充能指数：**{charge.index}** / 100 · {charge.tier}")
+    lines += [
+        f"- {_streak_line(streak)}",
+        f"- 历史最高连签：**{best_streak}** 天",
+        f"- 累计签到：**{signin_count}** 天",
+        f"- {card_line}",
+    ]
+    return "\n".join(lines)
 
 
 def need_signin_text() -> str:
@@ -362,6 +369,7 @@ def menu_text() -> str:
             "- /充能面包 — 今日签到，领取面包",
             "- /面包排行榜 本群 或 /面包排行榜 全部 — 面包总数榜",
             "- /签到排行榜 本群 或 /签到排行榜 全部 — 今日签到顺序榜",
+            "- /今日充能指数 — 看看今天充了几格电",
             "- /我的面包 — 个人详情",
             "- /补签 — 用补签卡补回昨天，接上连签",
             "- /改名 新名字 — 换个显示名",
@@ -440,6 +448,41 @@ def kb_menu() -> dict:
                 ("帮助", CMD, "帮助", STYLE_GRAY),
                 ("改名", CMD, "改名 ", STYLE_GRAY),
             ],
+        ]
+    )
+
+
+def charge_text(*, nickname: str, reading: Any, signed_today: bool) -> str:
+    """今日充能指数的回复。
+
+    评语用**引用块**（`> `）排版：一言体本来就是"引文"的样子，而引用块在群聊
+    markdown 里是受支持且实测能正常渲染的（`>` 是文档里列出的支持格式之一）。
+    """
+    status = "今天已经签到过了" if signed_today else "今天还没签到，发 充能面包 就能领面包"
+    return "\n".join(
+        [
+            f"# {BREAD} 今日充能指数",
+            "",
+            f"**{safe_name(nickname)}** — **{reading.index}** / 100 · {reading.tier}",
+            "",
+            f"> {reading.quote}",
+            "",
+            status,
+        ]
+    )
+
+
+def kb_charge() -> dict:
+    """看完指数之后：想签就签，或者去看自己的面包。
+
+    刻意**不挂"刷新"** —— 指数当天恒定，刷新按钮是假的。
+    """
+    return _keyboard(
+        [
+            [
+                ("签到", CMD, "充能面包", STYLE_BLUE),
+                ("我的面包", CMD, "我的面包", STYLE_GRAY),
+            ]
         ]
     )
 

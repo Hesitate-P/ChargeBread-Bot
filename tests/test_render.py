@@ -23,6 +23,7 @@ from chargebread.render import (  # noqa: E402
     MeStanding,
     already_text,
     board_text,
+    charge_text,
     makeup_text,
     mention_tag,
     menu_text,
@@ -32,6 +33,7 @@ from chargebread.render import (  # noqa: E402
     signin_text,
     welcome_text,
     kb_board,
+    kb_charge,
     kb_makeup,
     kb_menu,
     kb_profile,
@@ -652,10 +654,105 @@ class WelcomeTest(unittest.TestCase):
                 self.assertFalse(line.lstrip().startswith(">"), repr(line))
 
 
+class ChargeTextTest(unittest.TestCase):
+    """今日充能指数的呈现。"""
+
+    def _reading(self) -> "ChargeReading":
+        from chargebread.game import ChargeReading
+
+        return ChargeReading(index=73, tier="满电", quote="烤箱叮了一声，今天是我的。")
+
+    def test_shows_index_out_of_hundred_and_tier(self) -> None:
+        text = charge_text(nickname="小明", reading=self._reading(), signed_today=True)
+        self.assertIn("**73**", text)
+        self.assertIn("100", text, "要让人知道满分是多少")
+        self.assertIn("满电", text)
+
+    def test_quote_is_rendered_as_a_blockquote(self) -> None:
+        """一言体就该是引文样式 —— 引用块在群聊 markdown 里支持，
+        平台上刷到过别的机器人这么用，能正常渲染。"""
+        text = charge_text(nickname="小明", reading=self._reading(), signed_today=True)
+        quoted = [ln for ln in text.split("\n") if ln.startswith("> ")]
+        self.assertEqual(len(quoted), 1, text)
+        self.assertIn("烤箱叮了一声", quoted[0])
+
+    def test_tells_unsigned_user_to_sign_in(self) -> None:
+        unsigned = charge_text(nickname="小明", reading=self._reading(), signed_today=False)
+        signed = charge_text(nickname="小明", reading=self._reading(), signed_today=True)
+        self.assertIn("还没签到", unsigned)
+        self.assertNotIn("还没签到", signed)
+        self.assertIn("签到", signed, "已签到的人也该看到状态")
+
+    def test_has_no_image(self) -> None:
+        """这条不挂图：它是"读数"，不是签到奖励。图只在签到和欢迎语里出现。"""
+        text = charge_text(nickname="小明", reading=self._reading(), signed_today=True)
+        self.assertNotIn("![", text)
+
+    def test_nickname_is_sanitised(self) -> None:
+        text = charge_text(nickname="**坏**", reading=self._reading(), signed_today=True)
+        self.assertNotIn("****", text)
+
+    def test_no_unintended_list_structure(self) -> None:
+        import re
+
+        text = charge_text(nickname="甲", reading=self._reading(), signed_today=False)
+        for line in text.split("\n"):
+            self.assertIsNone(re.match(r"^\s*\d+[.)]\s", line), repr(line))
+
+    def test_keyboard_is_signin_then_profile(self) -> None:
+        labels = [
+            b["render_data"]["label"]
+            for row in kb_charge()["content"]["rows"]
+            for b in row["buttons"]
+        ]
+        self.assertEqual(labels, ["签到", "我的面包"])
+
+    def test_keyboard_has_no_refresh_button(self) -> None:
+        """指数当天恒定，刷新按钮是假的。"""
+        labels = [
+            b["render_data"]["label"]
+            for row in kb_charge()["content"]["rows"]
+            for b in row["buttons"]
+        ]
+        for word in ("刷新", "重摇", "再抽"):
+            self.assertNotIn(word, labels)
+
+
+class ProfileChargeLineTest(unittest.TestCase):
+    def test_profile_shows_index_and_tier_but_not_the_quote(self) -> None:
+        """个人页已经有 6 行信息，再塞一句诗会太长；评语留给专门那条命令。"""
+        from chargebread.game import ChargeReading
+
+        text = profile_text(
+            nickname="小明", rank=3, total_bread=142, total_today=17, streak=5,
+            best_streak=11, signin_count=48, cards=1, days_to_card=2,
+            charge=ChargeReading(index=73, tier="满电", quote="烤箱叮了一声，今天是我的。"),
+        )
+        self.assertIn("73", text)
+        self.assertIn("满电", text)
+        self.assertNotIn("烤箱叮了一声", text, "个人页不显示评语")
+
+    def test_profile_without_charge_still_renders(self) -> None:
+        """charge 是可选参数，旧调用点不该炸。"""
+        text = profile_text(
+            nickname="小明", rank=0, total_bread=0, total_today=0, streak=0,
+            best_streak=0, signin_count=0, cards=0, days_to_card=7,
+        )
+        self.assertIn("小明", text)
+        self.assertNotIn("充能指数", text)
+
+
 class MenuTest(unittest.TestCase):
     def test_lists_every_command(self) -> None:
         text = menu_text()
-        for cmd in ("充能面包", "面包排行榜", "签到排行榜", "我的面包", "补签"):
+        for cmd in (
+            "充能面包",
+            "面包排行榜",
+            "签到排行榜",
+            "今日充能指数",
+            "我的面包",
+            "补签",
+        ):
             self.assertIn(cmd, text)
 
 

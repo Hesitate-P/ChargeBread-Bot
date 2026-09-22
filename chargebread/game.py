@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import random
 import sqlite3
@@ -22,9 +23,12 @@ from zoneinfo import ZoneInfo
 
 from .db import Database, SigninRow
 from .rules import (
+    CHARGE_MAX,
+    CHARGE_MIN,
     MAKEUP_BREAD,
     Reward,
     cards_earned_at_streak,
+    charge_tier,
     rank_factor,
     roll_reward,
 )
@@ -296,6 +300,36 @@ def make_up(
         total_bread=db.total_bread(user_id),
         cards_balance=balance,
     )
+
+
+# ---- 今日充能指数 ------------------------------------------------------------
+# 推导串里的版本号。改推导规则时**一起改它**，让"所有人指数重算"变成一次显式
+# 动作，而不是某天大家发现数字突然全变了。
+CHARGE_SALT = "chargebread:charge:v1"
+
+
+@dataclass(frozen=True)
+class ChargeReading:
+    index: int
+    tier: str
+    quote: str
+
+
+def charge_index(user_id: str, day: date) -> ChargeReading:
+    """算某人某天的充能指数。
+
+    纯推导，**不读库也不写库**：同样的 (身份, 游戏日) 永远得到同样的结果，
+    所以它天然满足"当天恒定、跨群一致、零点跟签到一起重置"。
+    指数是账号级的（和面包一样），不按群分开 —— 同一个人在哪个群查都一样。
+
+    取值均匀落在 0~100；评语从该档的语料池里取，档内也由同一个摘要决定，
+    所以同一人同一天连评语都是固定的。
+    """
+    digest = hashlib.sha256(f"{CHARGE_SALT}:{user_id}:{day.isoformat()}".encode()).digest()
+    index = CHARGE_MIN + int.from_bytes(digest[:4], "big") % (CHARGE_MAX - CHARGE_MIN + 1)
+    tier = charge_tier(index)
+    quote = tier.quotes[int.from_bytes(digest[4:8], "big") % len(tier.quotes)]
+    return ChargeReading(index=index, tier=tier.name, quote=quote)
 
 
 def _grant_cards(db: Database, user_id: str, streak: int, *, restarted: bool = False) -> int:

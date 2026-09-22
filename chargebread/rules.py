@@ -91,3 +91,80 @@ def cards_earned_at_streak(streak: int) -> int:
 def days_to_next_card(streak: int) -> int:
     """距离下一张补签卡还差几天连签。"""
     return MAKEUP_CARD_STREAK_STEP - (streak % MAKEUP_CARD_STREAK_STEP)
+
+
+# ---- 今日充能指数 ------------------------------------------------------------
+# 纯玩梗：不影响任何面包。数值由 (身份, 游戏日) 推导，当天恒定、跨群一致。
+CHARGE_MIN = 0
+CHARGE_MAX = 100
+
+
+@dataclass(frozen=True)
+class ChargeTier:
+    name: str
+    upper: int  # 该档的上界（含）
+    quotes: tuple[str, ...]
+
+
+# 评语是"充能面包特别版一言"：一句、带点诗意或自嘲，和档位的情绪对上。
+# 指数 3 分不配热血台词 —— 分档的意义就在这儿。
+CHARGE_TIERS: tuple[ChargeTier, ...] = (
+    ChargeTier(
+        "亏电",
+        19,
+        (
+            "今天的面包是凉的，闪电没有来。",
+            "电量 3%。我把自己烤糊了。",
+            "插上电，跳闸了。",
+            "面包还在，电走了。",
+        ),
+    ),
+    ChargeTier(
+        "虚电",
+        39,
+        (
+            "微弱地亮了一下，然后继续躺着。",
+            "边角有一点焦，那是今天全部的倔强。",
+            "够照亮自己，不够照亮别人。",
+            "面包的边缘在发光，很淡。",
+        ),
+    ),
+    ChargeTier(
+        "半电",
+        59,
+        (
+            "一半面包，一半电。",
+            "不好不坏，刚好够发一次呆。",
+            "指示灯亮着，不亮也不暗。",
+            "今天的分量，是够用的那种够用。",
+        ),
+    ),
+    ChargeTier(
+        "满电",
+        79,
+        (
+            "烤箱叮了一声，今天是我的。",
+            "电量充足，适合做一件小事。",
+            "面包热着，闪电在里层走着。",
+            "够用，而且还有一点余。",
+        ),
+    ),
+    ChargeTier(
+        "超充",
+        100,
+        (
+            "闪电从中间劈过，我亮了整整一天。",
+            "今天的面包带着电，握久了会麻。",
+            "别碰我，我在充能。",
+            "整个烤箱都在响，是给我鼓掌。",
+        ),
+    ),
+)
+
+
+def charge_tier(index: int) -> ChargeTier:
+    """指数落在哪一档。区间是闭区间，所以 0~100 每一分都有归属。"""
+    for tier in CHARGE_TIERS:
+        if index <= tier.upper:
+            return tier
+    return CHARGE_TIERS[-1]

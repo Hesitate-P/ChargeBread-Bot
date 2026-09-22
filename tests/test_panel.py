@@ -144,7 +144,15 @@ class PanelItemsTest(unittest.TestCase):
 
     def test_panel_covers_all_user_facing_commands(self) -> None:
         names = {item["name"] for item in panel.panel_items()}
-        for expected in ("充能面包", "面包排行榜", "签到排行榜", "我的面包", "补签", "帮助"):
+        for expected in (
+            "充能面包",
+            "面包排行榜",
+            "签到排行榜",
+            "今日充能指数",
+            "我的面包",
+            "补签",
+            "帮助",
+        ):
             self.assertIn(expected, names)
 
     def test_names_are_the_bare_words_our_parser_accepts(self) -> None:

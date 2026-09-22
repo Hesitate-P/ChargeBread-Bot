@@ -16,7 +16,7 @@ import asyncio
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -349,6 +349,86 @@ class WelcomeTest(BotTestCase):
             self.db.mark_event_seen("GROUP_MEMBER_ADD:env-1", NOW.isoformat()),
             "失败的欢迎语必须撤销幂等标记",
         )
+
+
+class ChargeTest(BotTestCase):
+    """今日充能指数：纯玩梗，不碰任何游戏状态。"""
+
+    async def test_reply_shows_index_tier_and_quote(self) -> None:
+        await self.bot.handle(group_event("/今日充能指数"))
+        reading = game.charge_index(UID, date(2026, 9, 21))
+        self.assertIn(str(reading.index), self.last["content"])
+        self.assertIn(reading.tier, self.last["content"])
+        self.assertIn(reading.quote, self.last["content"])
+
+    async def test_uses_its_own_keyboard(self) -> None:
+        await self.bot.handle(group_event("/今日充能指数"))
+        labels = [
+            b["render_data"]["label"]
+            for row in self.last["keyboard"]["content"]["rows"]
+            for b in row["buttons"]
+        ]
+        self.assertEqual(labels, ["签到", "我的面包"])
+
+    async def test_does_not_touch_game_state(self) -> None:
+        """这是这个功能的定义：不影响面包、不产生签到记录、不改连签。"""
+        bread_before = self.db.total_bread(UID)
+        count_before = self.db.signin_count(UID)
+        streak_before = game.current_streak(
+            {datetime.strptime(d, "%Y-%m-%d").date() for d in self.db.signed_dates(UID)},
+            date(2026, 9, 21),
+        )
+
+        await self.bot.handle(group_event("/今日充能指数"))
+
+        self.assertEqual(self.db.total_bread(UID), bread_before, "指数不该影响面包")
+        self.assertEqual(self.db.signin_count(UID), count_before, "指数不该产生签到")
+        self.assertIsNone(self.db.get_signin("2026-09-21", UID), "不该写入今天的签到")
+        self.assertEqual(
+            game.current_streak(
+                {datetime.strptime(d, "%Y-%m-%d").date() for d in self.db.signed_dates(UID)},
+                date(2026, 9, 21),
+            ),
+            streak_before,
+            "指数不该动连签",
+        )
+
+    async def test_same_index_across_groups(self) -> None:
+        """指数是账号级的（和面包一样），同一个人在哪个群查都一样。"""
+        await self.bot.handle(group_event("/今日充能指数", group=GROUP))
+        first = self.last["content"]
+        await self.bot.handle(
+            group_event("/今日充能指数", group=GROUP2, message_id="m2", envelope="e2")
+        )
+        self.assertEqual(self.last["content"], first)
+
+    async def test_available_without_ever_signing_in(self) -> None:
+        """玩梗的东西不设门槛：没签到的人也能查，回复里提示去签到。"""
+        await self.bot.handle(group_event("/今日充能指数", user_id=UID2, nickname="阿强"))
+        self.assertIn("还没签到", self.last["content"])
+        self.assertEqual(self.db.signin_count(UID2), 0, "查询本身不该建档签到的记录")
+
+    async def test_repeat_query_is_stable(self) -> None:
+        await self.bot.handle(group_event("/今日充能指数"))
+        first = self.last["content"]
+        await self.bot.handle(
+            group_event("/今日充能指数", message_id="m2", envelope="e2")
+        )
+        self.assertEqual(self.last["content"], first, "当天查多少次都一样")
+
+    async def test_signed_user_sees_signed_status(self) -> None:
+        await self.bot.handle(group_event("/充能面包"))
+        await self.bot.handle(
+            group_event("/今日充能指数", message_id="m2", envelope="e2")
+        )
+        self.assertIn("已经签到过了", self.last["content"])
+
+    async def test_profile_carries_the_index(self) -> None:
+        await self.bot.handle(group_event("/我的面包"))
+        reading = game.charge_index(UID, date(2026, 9, 21))
+        self.assertIn(str(reading.index), self.last["content"])
+        self.assertIn(reading.tier, self.last["content"])
+        self.assertNotIn(reading.quote, self.last["content"], "个人页不显示评语")
 
 
 class MenuTest(BotTestCase):
