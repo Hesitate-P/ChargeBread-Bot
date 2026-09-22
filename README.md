@@ -98,6 +98,9 @@ docker compose logs -f
 | 指令面板字数 | `name` 上限写着「14 个字符，约 7 个中文汉字」——**一个汉字算 2 个单位**，所以实际上限是 **7 个汉字**。超了报 `30013 超出数量限制`（错误信息完全指错方向） |
 | 指令面板列表 | `GET /v2/panels` 的 `scope` 是**必填查询参数**（端点清单里没写），响应字段是 **`records`** 不是 `panels` |
 | markdown 有序列表 | `数字.` + 空格是 CommonMark 列表标记，渲染器会**自动重新编号**，且列表被空行打断时从头开始。所以榜单序号**不能用 `数字.`**，我们改用中文顿号 `1、`（对 markdown 无含义） |
+| @某人 | 官方「文本交互」页：`<qqbot-at-user id="" />`，**群聊可用**且支持 markdown 消息（旧写法 `<@userid>` 即将弃用）。这个语法不在消息/markdown 那几页里，只在 `server-inter/message/trans/text-chain.html` |
+| 被动回复入群事件 | 文档说 `event_id` 只支持 `INTERACTION_CREATE` / `GROUP_ADD_ROBOT` / `GROUP_MSG_RECEIVE`，但**实测有其他官方机器人（未启用主动消息）成功用它回复 `GROUP_MEMBER_ADD`**。我们仍保留了退回主动消息的兜底 |
+| 入群事件不带昵称 | `GROUP_MEMBER_ADD` 的 `d` 只有 `group_openid` / `member_openid` / `user_openid` / `timestamp` —— 没有昵称、也没有 `id`。所以写不出"@昵称"，改用 openid 提及让客户端渲染名字 |
 
 > 上表每一条都是真机验证或文档原文逐字核对过的。**不要**把未经核对的转述写进这里——
 > 本项目就发生过一次：一条"新增机器人必须填写 IP 白名单才能提审上线"的说法被写进

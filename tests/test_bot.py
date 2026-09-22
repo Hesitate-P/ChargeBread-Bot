@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from chargebread import commands, game  # noqa: E402
+from chargebread.api import ApiError  # noqa: E402
 from chargebread.bot import Bot  # noqa: E402
 from chargebread.config import Config  # noqa: E402
 from chargebread.db import Database  # noqa: E402
@@ -53,6 +54,8 @@ class FakeApi:
         self.sent: list[dict] = []
         self.acks: list[str] = []
         self.ack_error: Exception | None = None
+        # 可编排的发送错误：每次 send_markdown 先从这里弹一个，非 None 就抛
+        self.send_errors: list[Exception | None] = []
         self._seq: dict[str, int] = {}
 
     def next_seq(self, key: str) -> int:
@@ -62,6 +65,10 @@ class FakeApi:
     async def send_markdown(
         self, group_openid, content, *, keyboard=None, msg_id=None, event_id=None, msg_seq=1
     ):
+        if self.send_errors:
+            error = self.send_errors.pop(0)
+            if error is not None:
+                raise error
         self.sent.append(
             {
                 "group": group_openid,
@@ -151,6 +158,32 @@ def interaction_event(
     )
 
 
+def member_add_event(
+    *,
+    member_id: str = UID2,
+    group: str = GROUP,
+    envelope: str = "GROUP_MEMBER_ADD:env-1",
+    timestamp: int = 1789996359,
+) -> GatewayEvent:
+    """新成员入群事件。
+
+    注意这个事件的 `d` 里**没有 `id`、也没有昵称** —— 真实载荷只有这四个字段
+    （探针抓到的原文如此），所以 message_id 是空串，只能靠外层信封 id。
+    """
+    return GatewayEvent(
+        name="GROUP_MEMBER_ADD",
+        message_id="",
+        envelope_id=envelope,
+        data={
+            "group_openid": group,
+            "member_openid": member_id,
+            "timestamp": timestamp,
+        },
+        seq=4,
+        raw={},
+    )
+
+
 class BotTestCase(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -212,6 +245,110 @@ class SigninTest(BotTestCase):
         )
         self.assertIn("第2个签到", self.last["content"])
         self.assertIn("阿强", self.last["content"])
+
+
+class WelcomeTest(BotTestCase):
+    """新成员入群的欢迎语。
+
+    这个事件三处与常规不同，测试要把它们都钉住：
+      · `d` 里没有 `id` → 只能拿外层信封 id 当 event_id
+      · `d` 里没有昵称 → 用 openid 提及，名字由客户端渲染
+      · 文档说 event_id 不支持这个事件 → 要有退回主动消息的路
+    """
+
+    async def test_sends_welcome_with_mention_image_and_buttons(self) -> None:
+        await self.bot.handle(member_add_event())
+        self.assertEqual(len(self.api.sent), 1)
+        self.assertIn(IMAGE, self.last["content"])
+        self.assertIn("充能面包", self.last["content"])
+        self.assertIn(
+            f'<qqbot-at-user id="{UID2}" />', self.last["content"], "要 @ 新成员"
+        )
+        labels = [
+            b["render_data"]["label"]
+            for row in self.last["keyboard"]["content"]["rows"]
+            for b in row["buttons"]
+        ]
+        self.assertEqual(labels, ["签到", "帮助"])
+
+    async def test_uses_envelope_id_as_the_passive_anchor(self) -> None:
+        """这个事件没有 d.id，只能拿外层信封 id 当 event_id。"""
+        await self.bot.handle(member_add_event())
+        self.assertEqual(self.last["event_id"], "GROUP_MEMBER_ADD:env-1")
+        self.assertIsNone(self.last["msg_id"])
+
+    async def test_duplicate_delivery_sends_one_welcome(self) -> None:
+        event = member_add_event()
+        await self.bot.handle(event)
+        await self.bot.handle(event)
+        self.assertEqual(len(self.api.sent), 1)
+
+    async def test_respects_group_allowlist(self) -> None:
+        bot = Bot(
+            make_config(allowed_groups=frozenset({GROUP})), self.db, self.api, clock=lambda: NOW
+        )
+        await bot.handle(member_add_event(group=GROUP2))
+        self.assertEqual(self.api.sent, [])
+
+    async def test_can_be_disabled(self) -> None:
+        bot = Bot(make_config(welcome_enabled=False), self.db, self.api, clock=lambda: NOW)
+        await bot.handle(member_add_event())
+        self.assertEqual(self.api.sent, [])
+
+    async def test_missing_member_id_is_ignored(self) -> None:
+        await self.bot.handle(member_add_event(member_id=""))
+        self.assertEqual(self.api.sent, [])
+
+    async def test_missing_group_id_is_ignored(self) -> None:
+        await self.bot.handle(member_add_event(group=""))
+        self.assertEqual(self.api.sent, [])
+
+    async def test_falls_back_to_proactive_when_reply_is_refused(self) -> None:
+        """文档说 event_id 只支持三种事件。若平台真拒绝这个事件，
+        退回主动消息 —— 而且 **@ 要保住**（失败原因跟 @ 无关）。"""
+        self.api.send_errors = [
+            ApiError(40034027, "该事件不支持回复消息"),   # 带 @ 的被动回复
+            ApiError(40034027, "该事件不支持回复消息"),   # 去掉 @ 的被动回复
+            None,                                        # 主动消息成功
+        ]
+        await self.bot.handle(member_add_event())
+        self.assertEqual(len(self.api.sent), 1)
+        self.assertIsNone(self.last["event_id"], "主动消息不带 event_id")
+        self.assertIn("<qqbot-at-user", self.last["content"], "@ 不该因为退回主动而丢掉")
+
+    async def test_drops_the_mention_when_the_platform_rejects_it(self) -> None:
+        """@ 标签是我们动态拼进 content 的，社区反馈这种传参可能被拒。
+        那种情况下脱掉 @ 再发一次 —— 欢迎语本身比 @ 重要。"""
+        self.api.send_errors = [ApiError(40034124, "markdown消息参数错误"), None]
+        await self.bot.handle(member_add_event())
+        self.assertEqual(len(self.api.sent), 1, "去掉 @ 之后应该发成功")
+        self.assertNotIn("<qqbot-at-user", self.last["content"])
+        self.assertIn(IMAGE, self.last["content"], "欢迎语本体不能丢")
+
+    async def test_proactive_failure_does_not_raise(self) -> None:
+        """两条被动路都被拒、主动又没开权限时，只记日志，不能把事件处理炸掉。"""
+        self.api.send_errors = [
+            ApiError(40034027, "该事件不支持回复消息"),
+            ApiError(40034027, "该事件不支持回复消息"),
+            ApiError(40034105, "主动消息发送失败，无权限"),
+        ]
+        await self.bot.handle(member_add_event())   # 不应抛出
+        self.assertEqual(self.api.sent, [])
+
+    async def test_unexpected_error_propagates_so_redelivery_can_retry(self) -> None:
+        self.api.send_errors = [ApiError(50055001, "消息发送异常，请稍后重试")]
+        with self.assertRaises(ApiError):
+            await self.bot.handle(member_add_event())
+
+    async def test_failed_welcome_is_unmarked_for_redelivery(self) -> None:
+        self.api.send_errors = [ApiError(50055001, "消息发送异常")]
+        with self.assertRaises(ApiError):
+            await self.bot.handle(member_add_event())
+        # 事件不该被记为已处理，否则平台重投也救不回来
+        self.assertTrue(
+            self.db.mark_event_seen("GROUP_MEMBER_ADD:env-1", NOW.isoformat()),
+            "失败的欢迎语必须撤销幂等标记",
+        )
 
 
 class MenuTest(BotTestCase):

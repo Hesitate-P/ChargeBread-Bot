@@ -18,7 +18,8 @@ import logging
 from datetime import date, datetime
 from typing import Any, Callable
 
-from . import commands, game, render
+from . import api, commands, game, render
+from .api import ApiError
 from .config import Config
 from .db import Database
 from .gateway import GatewayEvent
@@ -75,6 +76,8 @@ class Bot:
             await self._on_group_message(event)
         elif event.name == "INTERACTION_CREATE":
             await self._on_interaction(event)
+        elif event.name == "GROUP_MEMBER_ADD":
+            await self._on_member_add(event)
         else:
             log.debug("忽略事件 %s", event.name)
 
@@ -119,6 +122,97 @@ class Bot:
             # 平台重投也会被丢掉，用户永远收不到回复（实测报的"漏请求"）。
             self.db.unmark_event(key)
             raise
+
+    # ---- 新成员入群 -------------------------------------------------------
+    async def _on_member_add(self, event: GatewayEvent) -> None:
+        """新成员入群时发欢迎语。
+
+        这个事件三处与常规不同，都得兜住：
+          · `d` 里**没有 `id`**，所以没有 msg_id 可用；只能拿**外层信封 id**
+            当 `event_id` 做被动回复。文档说 event_id 只支持三种事件、不含
+            GROUP_MEMBER_ADD，但实测有其他官方机器人这么用（且未启用主动消息），
+            所以先试被动。
+          · 万一被动回复被拒（40034027 该事件不支持回复），退回**主动消息** ——
+            那条路要群管理员开着"允许主动发送"，失败了只记日志。
+          · `d` 里**没有昵称**，所以写不出"@昵称"；但平台支持用 openid 提及
+            （`<qqbot-at-user id="" />`），名字由客户端渲染，不需要我们拿到。
+        """
+        if not self.config.welcome_enabled:
+            return
+        data = event.data
+        group_openid = str(data.get("group_openid") or "")
+        member_openid = str(data.get("member_openid") or "")
+        if not group_openid or not member_openid:
+            log.debug("入群事件缺少群或成员标识，已忽略")
+            return
+        if self.config.allowed_groups and group_openid not in self.config.allowed_groups:
+            log.debug("群 %s 不在白名单内，不发欢迎语", group_openid)
+            return
+
+        now = self._clock()
+        # 这个事件没有 d.id，用信封 id 兜底；实在没有再拼一个
+        key = event.envelope_id or f"GROUP_MEMBER_ADD:{group_openid}:{data.get('timestamp')}"
+        if not self.db.mark_event_seen(key, now.isoformat()):
+            return
+
+        try:
+            self.db.upsert_group(group_openid, None, now.isoformat())
+            await self._send_welcome(group_openid, member_openid, event.envelope_id)
+        except Exception:
+            self.db.unmark_event(key)
+            raise
+
+    async def _send_welcome(
+        self, group_openid: str, member_openid: str, envelope_id: str
+    ) -> None:
+        """依次尝试三条路，任何一条成功就结束。
+
+          1) 带 @ 的**被动回复**（首选 —— 官方机器人普遍这么用，且不需要主动消息额度）
+          2) 去掉 @ 的被动回复（@ 标签是我们动态拼进 content 的，社区有反馈这种
+             传参会被平台拒；欢迎语本身比 @ 重要，不能为它整条丢掉）
+          3) **主动消息**（平台不接受回复这个事件时；需要群内开启「允许主动发送」）
+
+        第 3 步会尽量保住 @ —— 如果前面的失败原因跟 @ 无关（只是事件不支持回复），
+        @ 本来是好的，不该白丢。
+        """
+        keyboard = render.kb_welcome()
+
+        async def send(text: str, anchor: str | None) -> None:
+            await self.api.send_markdown(
+                group_openid, text, keyboard=keyboard, event_id=anchor, msg_seq=1
+            )
+
+        with_mention = render.welcome_text(mention=render.mention_tag(member_openid), image_url=self.config.image_url)
+        without_mention = render.welcome_text(mention="", image_url=self.config.image_url)
+
+        mention_usable = True
+        if envelope_id:
+            try:
+                await send(with_mention, envelope_id)
+                return
+            except ApiError as exc:
+                if exc.code in api.MARKDOWN_CONTENT_ERRORS:
+                    log.warning("带 @ 的欢迎语被平台拒绝（%s），去掉 @ 再试", exc.code)
+                    mention_usable = False
+                elif exc.code == api.EVENT_REPLY_NOT_SUPPORTED:
+                    log.info("平台不支持被动回复入群事件（%s），改走主动消息", exc.code)
+                else:
+                    raise
+            try:
+                await send(without_mention, envelope_id)
+                return
+            except ApiError as exc:
+                if exc.code != api.EVENT_REPLY_NOT_SUPPORTED:
+                    log.warning("被动回复入群事件失败（%s）", exc.code, exc_info=True)
+
+        try:
+            await send(with_mention if mention_usable else without_mention, None)
+        except Exception:  # noqa: BLE001 - 欢迎语失败不该影响其它事件
+            log.warning(
+                "欢迎语没发出去（被动与主动都没成功）。若群内未开启「允许主动发送」，"
+                "主动那条必然失败 —— 需要群管理员在机器人资料页打开该开关。",
+                exc_info=True,
+            )
 
     # ---- 按钮回调 ---------------------------------------------------------
     async def _on_interaction(self, event: GatewayEvent) -> None:

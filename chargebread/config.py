@@ -48,6 +48,8 @@ class Config:
     reset_hour: int = 0
     # 空集合 = 不限制；非空则只服务这些群
     allowed_groups: frozenset[str] = frozenset()
+    # 新成员入群是否发欢迎语
+    welcome_enabled: bool = True
     api_base: str = API_BASE
     log_level: str = "INFO"
 
@@ -100,6 +102,8 @@ class Config:
             tz=tz,
             reset_hour=reset_hour,
             allowed_groups=_split_openids(get("BREAD_ALLOWED_GROUPS")),
+            welcome_enabled=get("BREAD_WELCOME_ENABLED", "1").strip().lower()
+            not in ("0", "false", "no", "off"),
             api_base=api_base,
             log_level=get("BREAD_LOG_LEVEL", "INFO").upper() or "INFO",
         )

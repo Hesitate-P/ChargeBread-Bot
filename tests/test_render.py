@@ -24,16 +24,19 @@ from chargebread.render import (  # noqa: E402
     already_text,
     board_text,
     makeup_text,
+    mention_tag,
     menu_text,
     need_signin_text,
     profile_text,
     safe_name,
     signin_text,
+    welcome_text,
     kb_board,
     kb_makeup,
     kb_menu,
     kb_profile,
     kb_signin,
+    kb_welcome,
 )
 
 IMAGE = "https://drive.example.tech:8443/sd/public/ChargeBread/ChargeBread.png"
@@ -506,6 +509,10 @@ class MarkdownStructureAuditTest(unittest.TestCase):
             ),
             "menu": menu_text(),
             "need_signin": need_signin_text(),
+            "welcome": welcome_text(image_url=IMAGE),
+            "welcome_with_mention": welcome_text(
+                mention=mention_tag("FE003FAF76C4817251FDC128A16753BB"), image_url=IMAGE
+            ),
         }
 
     def test_no_ordered_list_markers_anywhere(self) -> None:
@@ -554,6 +561,77 @@ class MarkdownStructureAuditTest(unittest.TestCase):
             for index, line in enumerate(lines):
                 if line.startswith("#"):
                     self.assertLess(index, 2, f"{name} 第 {index} 行才是标题: {line!r}")
+
+
+class WelcomeTest(unittest.TestCase):
+    """新成员入群的欢迎语。"""
+
+    def test_contains_the_bread_image(self) -> None:
+        text = welcome_text(image_url=IMAGE)
+        self.assertIn(IMAGE, text)
+
+    def test_image_sits_on_its_own_line(self) -> None:
+        lines = welcome_text(image_url=IMAGE).split("\n")
+        image_line = [ln for ln in lines if IMAGE in ln][0]
+        self.assertTrue(image_line.strip().startswith("!"))
+        self.assertEqual(lines[lines.index(image_line) - 1].strip(), "", "图片前要有空行")
+
+    def test_tells_them_how_to_sign_in(self) -> None:
+        text = welcome_text(image_url=IMAGE)
+        self.assertIn("充能面包", text)
+
+    def test_mention_uses_the_documented_group_syntax(self) -> None:
+        """官方"文本交互"页：`<qqbot-at-user id="" />`，群聊可用且支持 markdown。
+
+        旧写法 `<@userid>` 官方标记"即将弃用"，所以用新格式。
+        """
+        from chargebread.render import mention_tag
+
+        self.assertEqual(
+            mention_tag("FE003FAF76C4817251FDC128A16753BB"),
+            '<qqbot-at-user id="FE003FAF76C4817251FDC128A16753BB" />',
+        )
+
+    def test_empty_openid_yields_no_mention(self) -> None:
+        from chargebread.render import mention_tag
+
+        self.assertEqual(mention_tag(""), "")
+
+    def test_mention_is_optional(self) -> None:
+        self.assertNotIn("<qqbot-at-user", welcome_text(image_url=IMAGE))
+        self.assertIn(
+            "<qqbot-at-user",
+            welcome_text(mention=mention_tag("ABC123"), image_url=IMAGE),
+        )
+
+    def test_mention_sits_at_the_very_front(self) -> None:
+        """@ 要顶在最前面，否则客户端可能不把它当提及。"""
+        text = welcome_text(mention=mention_tag("ABC123"), image_url=IMAGE)
+        body = [ln for ln in text.split("\n") if "<qqbot-at-user" in ln]
+        self.assertTrue(body, "找不到提及所在的正文行")
+        self.assertTrue(body[0].lstrip().startswith("<qqbot-at-user"), body[0])
+
+    def test_welcome_keyboard_offers_signin_and_help(self) -> None:
+        """新成员最需要的是"怎么签到"和"规则是什么"，不是看榜。"""
+        labels = [
+            b["render_data"]["label"]
+            for row in kb_welcome()["content"]["rows"]
+            for b in row["buttons"]
+        ]
+        self.assertEqual(labels, ["签到", "帮助"])
+
+    def test_welcome_has_no_markdown_structure_hazards(self) -> None:
+        import re
+
+        from chargebread.render import mention_tag
+
+        for text in (
+            welcome_text(image_url=IMAGE),
+            welcome_text(mention=mention_tag("ABC123"), image_url=IMAGE),
+        ):
+            for line in text.split("\n"):
+                self.assertIsNone(re.match(r"^\s*\d+[.)]\s", line), repr(line))
+                self.assertFalse(line.lstrip().startswith(">"), repr(line))
 
 
 class MenuTest(unittest.TestCase):

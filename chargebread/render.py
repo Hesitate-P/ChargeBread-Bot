@@ -313,6 +313,44 @@ def need_signin_text() -> str:
     )
 
 
+def mention_tag(openid: str) -> str:
+    """构造 @某人 标签。
+
+    官方「文本交互」页的规格：`<qqbot-at-user id="" />`，场景是「群聊、文字子频道
+    可用」，消息类型支持「文本消息、图文消息、**markdown 消息**」。
+    旧写法 `<@userid>` 官方标记「即将弃用」，所以用新格式。
+
+    `id` 用的是 openid。`@所有人`（`<qqbot-at-everyone />`）只在文字子频道可用、
+    还需要额外权限，群聊里用不了。
+    """
+    if not openid:
+        return ""
+    return f'<qqbot-at-user id="{openid}" />'
+
+
+def welcome_text(*, mention: str = "", image_url: str) -> str:
+    """新成员入群的欢迎语。
+
+    关于 @：`GROUP_MEMBER_ADD` 事件**不携带昵称**（只有 openid），成员信息接口
+    又是白名单制，所以写不出"@昵称" —— 但平台支持用 openid 直接提及，
+    客户端会渲染成 `@用户` 标签，所以名字由客户端自己显示，不需要我们拿到。
+    """
+    lead = f"{mention} 恭喜，充能面包 {BREAD}" if mention else f"恭喜，充能面包 {BREAD}"
+    return "\n".join(
+        [
+            f"# {BREAD} 欢迎新成员",
+            "",
+            lead,
+            "",
+            "- 发 充能面包 签到，每天领面包",
+            "- 抢当天第一个签到有额外加成",
+            "- 点下面的按钮也能签到",
+            "",
+            f"![{IMAGE_ALT} {IMAGE_SIZE}]({image_url})",
+        ]
+    )
+
+
 def menu_text() -> str:
     return "\n".join(
         [
@@ -401,6 +439,22 @@ def kb_menu() -> dict:
                 ("帮助", CMD, "帮助", STYLE_GRAY),
                 ("改名", CMD, "改名 ", STYLE_GRAY),
             ],
+        ]
+    )
+
+
+def kb_welcome() -> dict:
+    """新成员看到的按钮。
+
+    他要的是"怎么开始"和"规则是什么"，不是排行榜（他还没有任何数据）。
+    所以只有两个：签到、帮助。
+    """
+    return _keyboard(
+        [
+            [
+                ("签到", CMD, "充能面包", STYLE_BLUE),
+                ("帮助", CMD, "帮助", STYLE_GRAY),
+            ]
         ]
     )
 

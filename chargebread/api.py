@@ -54,6 +54,11 @@ RETRY_BACKOFF = 0.3
 # 被动回复的 5 分钟窗口还在流逝。宁可快速失败也不需要长挂。
 SEND_TIMEOUT = 10.0
 
+# 平台说"该事件不支持回复消息" —— 用来判断能不能对某个事件做被动回复。
+EVENT_REPLY_NOT_SUPPORTED = 40034027
+# markdown 内容本身有问题（含参数错误、内容无效）。用于"去掉 @ 再试一次"的兜底。
+MARKDOWN_CONTENT_ERRORS = frozenset({40034011, 40034124, 40034008, 40034009, 40034010})
+
 log = logging.getLogger("chargebread.api")
 
 # 指令面板的场景取值（GET /v2/panels 的 scope 是必填参数）
